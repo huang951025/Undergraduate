@@ -1,0 +1,518 @@
+
+#Initialize
+EMPTY = '  '
+WATER = '~~'
+WOOD = 'WW'
+FOOD = 'FF'
+GOLD = 'GG'
+SPEARMAN = 'S'
+ARCHER = 'A'
+KNIGHT = 'K'
+SCOUT = 'T'
+PLAYER = 'H'
+RESOURCE = [WOOD, FOOD, GOLD, WATER]
+RESOURCE_NAME = {
+    WOOD: "Wood",
+    FOOD: "Food",
+    GOLD: "Gold",
+    WATER: "Water"
+}
+
+SOLDIER_NAME = {SPEARMAN: 'Spearman',
+                ARCHER: 'Archer',
+                KNIGHT: 'Knight',
+                SCOUT: 'Scout'}
+
+PRICE = {SPEARMAN: {WOOD: 1, FOOD: 1},
+         ARCHER: {WOOD: 1, GOLD: 1},
+         KNIGHT: {FOOD: 1, GOLD: 1},
+         SCOUT: {WOOD: 1, FOOD: 1, GOLD: 1}
+         }
+
+FIGHT = {
+    SPEARMAN: [SPEARMAN, KNIGHT, SCOUT],
+    KNIGHT: [KNIGHT, SCOUT, ARCHER],
+    ARCHER: [ARCHER, SPEARMAN, SCOUT],
+    SCOUT: [SCOUT]
+}
+
+STEP = {SPEARMAN: 1,ARCHER: 1, KNIGHT: 1, SCOUT: 2}
+
+PRICE_STRING = """Recruit Prices:
+  Spearman (S) - 1W, 1F
+  Archer (A) - 1W, 1G
+  Knight (K) - 1F, 1G
+  Scout (T) - 1W, 1F, 1G"""
+# water class
+class Water:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        self.symbol = WATER
+        self.name = 'Water'
+
+    def __str__(self):
+        return self.symbol
+#resource class
+class Resource:
+    def __init__(self, symbol, x, y):
+        self.symbol = symbol
+        self.x = x
+        self.y = y
+        self.name = RESOURCE_NAME[symbol]
+
+    def __str__(self):
+        return self.symbol
+#soldier class
+class Soldier:
+    def __init__(self, symbol, x, y, player_id):
+        self.symbol = symbol
+        self.x = x
+        self.y = y
+        self.player_id = player_id
+        self.name = SOLDIER_NAME[symbol]
+        self.fight = FIGHT[symbol]
+        self.step = STEP[symbol]
+
+    def __str__(self):
+        return self.symbol + str(self.player_id)
+
+#player class
+class Player:
+    def __init__(self, id, x, y):
+        self.id = id
+        self.x = x
+        self.y = y
+        self.soldiers = []
+        self.resources = {WOOD: 2,FOOD: 2,GOLD: 2}
+
+    def __str__(self):
+        return PLAYER + str(self.id)
+    #a method to add resource
+    def add_resource(self, symbol):
+        self.resources[symbol] += 2
+    #method get asset
+    def get_asset(self):
+        return "[Your Asset: Wood - {} Food - {} Gold - {}]".\
+            format(self.resources[WOOD],
+                   self.resources[FOOD],
+                   self.resources[GOLD])
+    #method check afford
+    def afford(self):
+        num = 0
+        for key, value in self.resources.items():
+            if value > 0:
+                num += 1
+        return num > 1
+    #method check cur soldier
+    def cur_soldier(self):
+        return len(self.soldiers) > 0
+    #check
+    def check(self, symbol):
+        price = PRICE[symbol]
+        for resource, p in price.items():
+            if self.resources[resource] < p:
+                return False
+        return True
+    #a method recuit
+    def recruit(self, symbol, x, y):
+        price = PRICE[symbol]#get price
+        for resource, p in price.items():
+            if self.resources[resource] < p:
+                return False #not enought resource
+
+        for resource, p in price.items():
+            self.resources[resource] -= p
+        self.soldiers.append(Soldier(symbol, x, y, self.id))
+        return True#have enought resource
+#the game class
+class DarkSoul:
+    def __init__(self, width, height):
+        self.width = width
+        self.height = height
+        self.players = [Player(1, 1, 1), Player(2, width-2, height-2)]
+        self.resources = []
+        self.cur_player_index = 0
+        self.over = False
+    #a method to move soldiers
+    def dispatch_soldiers(self, x0, y0, x1, y1):
+        if not (0 <= x1 < self.width and 0 <= y1 < self.height):##check is the move valid
+            return "Invalid Move", False
+        if x1 == x0 and y1 == y0:
+            return "Invalid Move", False
+        if x1 != x0 and y1 != y0:
+            return "Invalid Move", False
+
+        map = self.get_map()#get map
+        player = self.get_cur_players()
+        player2 = self.players[(self.cur_player_index+1) % 2]
+        src = map[y0][x0]
+        if not isinstance(src, Soldier):
+            return "Invalid Move", False
+        if src.player_id != player.id:
+            return "Invalid Move", False
+
+        dest = map[y1][x1]# cannot move to palyer's spot
+        if dest == player:
+            return "Invalid Move", False
+        if isinstance(dest, Soldier) and dest.player_id == player.id:
+            return "Invalid Move", False
+
+        step = abs(x1 - x0 + y1 - y0)
+        if step > src.step:
+            return "Invalid Move", False
+
+        path = []
+        if step == 2:# some soldrie can move 2 step
+            if x1 == x0:
+                path.append((x1,(y1+y0)//2))
+            else:
+                path.append(((x1+x0)//2,y1))
+        path.append((x1,y1))
+
+        message = "\nYou have moved {} from ({}, {}) to ({}, {}).".format(src.name, x0, y0, x1, y1)
+
+        for p in path:
+            meet = map[p[1]][p[0]]# arrive
+            if meet == EMPTY:#nothing
+                continue
+            if isinstance(meet, Water):# move to water soldrier die
+                player.soldiers.remove(src)
+                message += "\nWe lost the army {} due to your command!".format(src.name)
+                break
+            elif isinstance(meet, Resource):# colletc resource
+                player.add_resource(meet.symbol)
+                self.resources.remove(meet)
+                if p == path[-1]:# this is for format
+                    message += "\nGood. We collected 2 {}.".format(meet.name)
+                else:
+                    message += "\nGood. We collected 2 {}.".format(meet.name)
+            elif isinstance(meet, Player):
+                if meet == player:
+                    continue
+                self.over = True
+                message += "\nThe army {} captured the enemy’s capital.".format(src.name)
+                break
+            elif isinstance(meet, Soldier):#fight 
+                if meet.player_id == player.id:
+                    continue
+                if src.symbol == meet.symbol:
+                    player.soldiers.remove(src)
+                    player2.soldiers.remove(meet)
+                    message += "\nWe destroyed the enemy {} with massive loss!".format(meet.name)
+                    break
+                if meet.symbol in src.fight:
+                    player2.soldiers.remove(meet)
+                    message += "\nGreat! We defeated the enemy {}!".format(meet.name)
+                if src.symbol in meet.fight:
+                    player.soldiers.remove(src)
+                    message += "\nWe lost the army {} due to your command!".format(src.name)
+        
+        src.y = y1
+        src.x = x1
+        return message, True#return the message and boolean
+
+    def add_resource(self, symbol, x, y):# method add resource to map
+        self.resources.append(Resource(symbol, x, y))
+
+    def add_water(self, x, y):# add water in map
+        self.resources.append(Water(x, y))
+
+    def get_cur_players(self): # find the cur player ID
+        return self.players[self.cur_player_index]
+
+    def next_player(self):# get next player
+        self.cur_player_index = (self.cur_player_index + 1) % 2
+
+    def check_detail(self, symbol, x, y):# position and resource for recuited
+        map = self.get_map()
+        if map[y][x] !=EMPTY:
+            print("You must place your newly recruited unit in an unoccupied position next to your home base. Try again.")
+            return False
+        player = self.get_cur_players()
+        if not ((y, x) in [(player.x-1, player.y), (player.x+1, player.y), (player.x, player.y+1), (player.x, player.y-1)]):
+            print("You must place your newly recruited unit in an unoccupied position next to your home base. Try again.")
+            return False
+        if not player.recruit(symbol, x, y):
+            print("Insufficient resources. Try aga1n\n")
+            return False
+        print("\nYou has recruited a {}.\n".format(SOLDIER_NAME[symbol]))
+        print(player.get_asset())
+        return True
+
+    def get_map(self):#Initialize map
+        map = [[EMPTY for i in range(self.width)] for i in range(self.height)]
+        for player in self.players:
+            map[player.y][player.x] = player
+            for soldier in player.soldiers:
+                map[soldier.y][soldier.x] = soldier
+        for r in self.resources:
+            map[r.y][r.x] = r
+        return map
+
+    def __str__(self):
+        map = self.get_map()
+        string = ""
+        print("  X00 01 02 03 04X")
+        print(" Y+--------------+")
+        for y in range(self.height):
+            string += '0{}|'.format(y)
+            for x in range(self.width):
+                string += '{}|'.format(map[y][x])
+            string += '\n'
+        return string + " Y+--------------+"
+
+    def player_can_move(self):#check can palyer move
+        player = self.get_cur_players()
+        x = player.x
+        y = player.y
+        map = self.get_map()
+
+        return map[x-1][y] == EMPTY \
+            or map[x+1][y] == EMPTY \
+            or map[x][y-1] == EMPTY \
+            or map[x][y+1] == EMPTY
+
+filepath = 'config.txt'# read the file
+
+with open(filepath, 'r') as f:#read data from txt file
+    line = f.readline()
+    words = line.split(':')
+    if len(words) != 2:# check is file correct
+        raise SyntaxError("Invalid Configuration File: <line_name (e.g., Water)> has an odd number of elements!")
+    if words[0] != 'Frame':
+        raise SyntaxError("Invalid Configuration File: <line_name (e.g., Water)> has an odd number of elements!")
+    words = words[1].strip().split('x')
+    if len(words) != 2:
+        raise SyntaxError("Invalid Configuration File: <line_name (e.g., Water)> has an odd number of elements!")
+    if not (5 <= int(words[0]) <= 7 and 5 <= int(words[1]) <= 7):
+        raise ArithmeticError("Invalid Configuration File: <line_name> contains a position that is out of map.")
+
+    dark_soul = DarkSoul(int(words[0]), int(words[1]))
+
+    symbols = [WATER, WOOD, FOOD, GOLD]
+    positions = []
+    for symbol in symbols:
+        line = f.readline()
+        words = line.split(':')
+        if RESOURCE_NAME[symbol] != words[0]:
+            raise SyntaxError("Invalid Configuration File: <line_name (e.g., Water)> has an odd number of elements!")
+        words = words[1].strip().split(' ')
+        if len(words) % 2 !=0:
+            raise SyntaxError("Invalid Configuration File: <line_name (e.g., Water)> has an odd number of elements!")
+        for i in range(0, len(words), 2):
+
+            try:
+                x = int(words[i])
+                y = int(words[i+1])
+            except ValueError:
+                raise ValueError("Invalid Configuration File: The positions of home bases or the positions next to the home bases are occupied!")
+
+            if not (0 <= x <= dark_soul.width and 0 <= y <= dark_soul.height):
+                raise ArithmeticError("Invalid Configuration File: <line_name> contains a position that is out of map")
+
+            if (x, y) in [(0, 1), (1, 0), (2, 1), (1, 2), (dark_soul.width-3, dark_soul.height-2), (dark_soul.width-2, dark_soul.height-3), (dark_soul.width-1, dark_soul.height-2), (dark_soul.width-2, dark_soul.height-1)]:
+                raise ValueError("Invalid Configuration File: The positions of home bases or the positions next to the home bases are occupied!")
+            if(x, y) in positions:
+                raise SyntaxError("Invalid Configuration File: <line_name (e.g., Water)> has an odd number of elements!")
+            positions.append((x, y))
+            if symbol == WATER:
+                dark_soul.add_water(x, y)
+            else:
+                dark_soul.add_resource(symbol, x, y)
+print("Configuration file config.txt was loaded.")# load success
+
+def dark_soul_cmd(cmd):#for the cmd
+    if cmd == 'QUIT':
+        exit(0)
+    if cmd == 'DIS':
+        print("Please check the battlefield, commander.")
+        print(dark_soul)
+        return True
+    if cmd == 'PRIS':
+        print(PRICE_STRING)
+        return True
+    return False
+def printmove(sa,aa,ka,ta):# show the armirs who can move get 4 array for 4 different kind army
+    print("\nArmies to Move:")
+    if sa.__len__() != 0:# 4 if for loop to print who can move
+        print("  Spearman:", end=' ')
+        for i in sa:
+            str = i.x,i.y
+            if i == sa[-1]:
+                print(str,end = "")
+            else:
+                print(str,end = ", ")
+        print("")
+    if aa.__len__() != 0:
+        print("  Archer:", end=' ')
+        for i in aa:
+            str = i.x,i.y
+            if i == aa[-1]:
+                print(str,end = "")
+            else:
+                print(str,end = ", ")
+        print("")
+    if ka.__len__() != 0:
+        print("  Knight:", end=' ')
+        for i in ka:
+            str = i.x,i.y
+            if i == ka[-1]:
+                print(str,end = "")
+            else:
+                print(str,end = ", ")
+        print("")
+    if ta.__len__() != 0:
+        print("  Scout:", end=' ')
+        for i in ta:
+            str = i.x,i.y
+            if i == ta[-1]:
+                print(str,end = "")
+            else:
+                print(str,end = ", ")
+        print("")
+    print("")# done
+
+def checkavilibale(sa,aa,ka,ta):#check is any army in the arry
+    if sa.__len__() == 0:
+        if aa.__len__() == 0:
+            if ka.__len__() == 0:
+                if ta.__len__() == 0:
+                    return False
+                else:
+                    return True
+            else:
+                return True
+        else:
+            return True
+    else:
+        return True
+
+year = 617
+
+#game start!
+print("Game Started: Little Battle! (enter QUIT to quit the game)\n")
+print("Please check the battlefield, commander.")
+print(dark_soul)
+print("(enter DIS to display the map)\n")
+print(PRICE_STRING + "\n(enter PRIS to display the price list)\n")
+count = 0
+# a while loop to run the game
+while True:
+    print('-Year {}-\n'.format(year))
+    player = dark_soul.get_cur_players()
+    print("+++Player {}'s Stage: Recruit Armies+++\n".format(player.id))
+    print(player.get_asset())
+
+    sa = []# set up 4 array to story the army
+    aa = []
+    ka = []
+    ta = []
+    # Choose soldier type
+    while True:
+        if not player.afford():
+            print("No resources to recruit any armies.")
+            break
+
+        if not dark_soul.player_can_move():
+            print("No place to recruit new armies.")
+            break
+            # get the typr of soldier
+        cmd = input("\nWhich type of army to recruit, (enter) ‘S’, ‘A’, ‘K’, or ‘T’? Enter ‘NO’ to end this stage.\n")
+        if dark_soul_cmd(cmd):# check is input is cmd
+            continue
+        if cmd not in ['A', 'K', 'T', 'S', 'NO']:#check is in put vaild
+            print('Sorry, invalid input. Try again.')
+            continue
+        if cmd == "NO":#check is input = no
+            break
+        
+
+        # Choose a location
+        while True:
+            if not player.check(cmd):
+                print("Insufficient resources. Try again.")
+                break
+            pos = input("\nYou want to recruit a {}. Enter two integers as format ‘x y’ to place your army.\n".format(
+                SOLDIER_NAME[cmd]))
+            if dark_soul_cmd(pos):
+                continue
+            pos = pos.split(" ")
+            if pos.__len__() > 2:
+                print("Sorry, invalid input. Try again.")
+                continue
+            ok = dark_soul.check_detail(cmd, int(pos[0]), int(pos[1]))
+            if not ok:
+                continue
+            break
+    for soldier in player.soldiers:# put army to arry for temp
+        if soldier.symbol == "A":
+            aa.append(soldier)
+    for soldier in player.soldiers:
+        if soldier.symbol == "S":
+            sa.append(soldier)
+    for soldier in player.soldiers:
+        if soldier.symbol == "K":
+            ka.append(soldier)
+    for soldier in player.soldiers:
+        if soldier.symbol == "T":
+            ta.append(soldier)
+    sa1 = sa# copy to temarry it will Initialize every time
+    aa1 = aa
+    ka1 = ka
+    ta1 = ta
+
+    # move
+    print("\n===Player {}'s Stage: Move Armies===".format(player.id))# move stage
+    while True:
+        if not checkavilibale(sa1, aa1, ka1, ta1):# call checkavilibale
+            print("\nNo Army to Move: next turn.\n")
+            break
+        printmove(sa1, aa1, ka1, ta1)
+        cmd = input("Enter four integers as a format ‘x0 y0 x1 y1’ to represent move unit from (x0, y0) to (x1, y1) or ‘NO’ to end this turn.\n")
+        if dark_soul_cmd(cmd):# if input is cmd
+            continue
+        if cmd == 'NO':# if input is no
+            break
+        cmdcheck = cmd
+        cmdcheck = cmdcheck.replace(' ', '')
+        
+        if cmdcheck.__len__() != 4:#check in put vailid 
+            print("Invalid move. Try again.")
+            continue
+        if not cmdcheck.isdigit():
+            print("Invalid move. Try again.")
+            continue
+        pos = cmd.split(' ')
+        message, ok = dark_soul.dispatch_soldiers(int(pos[0]), int(pos[1]), int(pos[2]), int(pos[3]))
+        print(message)
+        if not ok:
+            continue
+        #delete from sa1
+        for i in sa1:
+            if i.x == int(pos[2]):
+                if i.y == int(pos[3]):
+                    sa1.remove(i)
+        for i in aa1:
+            if i.x == int(pos[2]):
+                if i.y == int(pos[3]):
+                    aa1.remove(i)
+        for i in ka1:
+            if i.x == int(pos[2]):
+                if i.y == int(pos[3]):
+                    ka1.remove(i)
+        for i in ta1:
+            if i.x == int(pos[2]):
+                if i.y == int(pos[3]):
+                    ta1.remove(i)
+
+        if dark_soul.over:# if player win
+            name = input("\nWhat’s your name, commander?\n")
+            print("\n***Congratulation! Emperor {} unified the country in {}.***".format(name, year))
+            exit(0)
+    # next round
+        #end while
+    count += 1
+    dark_soul.next_player()
+    if count % 2 == 0:#every 2 round yeart + 1
+        year += 1
